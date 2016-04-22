@@ -1342,7 +1342,7 @@ func (dm *DockerManager) killContainer(containerID kubecontainer.ContainerID, co
 		case <-done:
 			glog.V(4).Infof("preStop hook for container %q completed", name)
 		}
-		gracePeriod -= int64(unversioned.Now().Sub(start.Time).Seconds())
+		gracePeriod = 0
 	}
 
 	// always give containers a minimal shutdown window to avoid unnecessary SIGKILLs
