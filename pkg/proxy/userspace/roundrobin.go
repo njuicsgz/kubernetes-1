@@ -229,7 +229,6 @@ func (lb *LoadBalancerRR) updateAffinityMap(svcPort proxy.ServicePortName, newEn
 // Registered endpoints are updated if found in the update set or
 // unregistered if missing from the update set.
 func (lb *LoadBalancerRR) OnEndpointsUpdate(allEndpoints []api.Endpoints) {
-	registeredEndpoints := make(map[proxy.ServicePortName]bool)
 	lb.lock.Lock()
 	defer lb.lock.Unlock()
 
@@ -274,7 +273,6 @@ func (lb *LoadBalancerRR) OnEndpointsUpdate(allEndpoints []api.Endpoints) {
 				// Reset the round-robin index.
 				state.index = 0
 			}
-			registeredEndpoints[svcPort] = true
 		}
 	}
 	// Remove endpoints missing from the update.
