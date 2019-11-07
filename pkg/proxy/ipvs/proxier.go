@@ -899,6 +899,23 @@ func (proxier *Proxier) OnEndpointSlicesSynced() {
 // EntryInvalidErr indicates if an ipset entry is invalid or not
 const EntryInvalidErr = "error adding entry %s to ipset %s"
 
+func getLocalAddrs() (map[string]bool, error) {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil, err
+	}
+
+ 	localAddrs := map[string]bool{}
+	for i := range addrs {
+		intf, _, err := net.ParseCIDR(addrs[i].String())
+		if err != nil {
+			return nil, err
+		}
+		localAddrs[intf.String()] = true
+	}
+	return localAddrs, nil
+}
+
 // This is where all of the ipvs calls happen.
 // assumes proxier.mu is held
 func (proxier *Proxier) syncProxyRules() {
@@ -918,6 +935,12 @@ func (proxier *Proxier) syncProxyRules() {
 		metrics.DeprecatedSyncProxyRulesLatency.Observe(metrics.SinceInMicroseconds(start))
 		klog.V(4).Infof("syncProxyRules took %v", time.Since(start))
 	}()
+
+	localAddrs, err := getLocalAddrs()
+       	if err != nil {
+       		klog.Errorf("Failed to sync proxy rules due to get local address error: %v", err)
+        	return
+       	}
 
 	// We assume that if this was called, we really want to sync them,
 	// even if nothing changed in the meantime. In other words, callers are
@@ -1100,11 +1123,9 @@ func (proxier *Proxier) syncProxyRules() {
 
 		// Capture externalIPs.
 		for _, externalIP := range svcInfo.ExternalIPStrings() {
-			if local, err := utilproxy.IsLocalIP(externalIP); err != nil {
-				klog.Errorf("can't determine if IP is local, assuming not: %v", err)
-				// We do not start listening on SCTP ports, according to our agreement in the
-				// SCTP support KEP
-			} else if local && (svcInfo.Protocol() != v1.ProtocolSCTP) {
+			_, local := localAddrs[externalIP]
+			if local && (svcInfo.GetProtocol() != v1.ProtocolSCTP) { 
+				// We do not start listening on SCTP ports, according to our agreement in the SCTP support KEP
 				lp := utilproxy.LocalPort{
 					Description: "externalIP for " + svcNameString,
 					IP:          externalIP,
