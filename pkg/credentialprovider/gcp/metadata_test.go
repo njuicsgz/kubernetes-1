@@ -1,5 +1,5 @@
 /*
-Copyright 2014 The Kubernetes Authors All rights reserved.
+Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,25 +14,35 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package gcp_credentials
+package gcp
 
 import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 
+	utilnet "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/kubernetes/pkg/credentialprovider"
-	utilnet "k8s.io/kubernetes/pkg/util/net"
 )
 
+func createProductNameFile() (string, error) {
+	file, err := ioutil.TempFile("", "")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary test file: %v", err)
+	}
+	return file.Name(), ioutil.WriteFile(file.Name(), []byte("Google"), 0600)
+}
+
 func TestDockerKeyringFromGoogleDockerConfigMetadata(t *testing.T) {
-	registryUrl := "hello.kubernetes.io"
+	registryURL := "hello.kubernetes.io"
 	email := "foo@bar.baz"
 	username := "foo"
 	password := "bar"
@@ -42,8 +52,14 @@ func TestDockerKeyringFromGoogleDockerConfigMetadata(t *testing.T) {
      "email": %q,
      "auth": %q
    }
-}`, registryUrl, email, auth)
+}`, registryURL, email, auth)
 
+	var err error
+	gceProductNameFile, err = createProductNameFile()
+	if err != nil {
+		t.Errorf("failed to create gce product name file: %v", err)
+	}
+	defer os.Remove(gceProductNameFile)
 	const probeEndpoint = "/computeMetadata/v1/"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve the one metadata key.
@@ -54,7 +70,7 @@ func TestDockerKeyringFromGoogleDockerConfigMetadata(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintln(w, sampleDockerConfig)
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			http.Error(w, "", http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
@@ -75,11 +91,11 @@ func TestDockerKeyringFromGoogleDockerConfigMetadata(t *testing.T) {
 		t.Errorf("Provider is unexpectedly disabled")
 	}
 
-	keyring.Add(provider.Provide())
+	keyring.Add(provider.Provide(""))
 
-	creds, ok := keyring.Lookup(registryUrl)
+	creds, ok := keyring.Lookup(registryURL)
 	if !ok {
-		t.Errorf("Didn't find expected URL: %s", registryUrl)
+		t.Errorf("Didn't find expected URL: %s", registryURL)
 		return
 	}
 	if len(creds) > 1 {
@@ -99,7 +115,7 @@ func TestDockerKeyringFromGoogleDockerConfigMetadata(t *testing.T) {
 }
 
 func TestDockerKeyringFromGoogleDockerConfigMetadataUrl(t *testing.T) {
-	registryUrl := "hello.kubernetes.io"
+	registryURL := "hello.kubernetes.io"
 	email := "foo@bar.baz"
 	username := "foo"
 	password := "bar"
@@ -109,8 +125,14 @@ func TestDockerKeyringFromGoogleDockerConfigMetadataUrl(t *testing.T) {
      "email": %q,
      "auth": %q
    }
-}`, registryUrl, email, auth)
+}`, registryURL, email, auth)
 
+	var err error
+	gceProductNameFile, err = createProductNameFile()
+	if err != nil {
+		t.Errorf("failed to create gce product name file: %v", err)
+	}
+	defer os.Remove(gceProductNameFile)
 	const probeEndpoint = "/computeMetadata/v1/"
 	const valueEndpoint = "/my/value"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -121,12 +143,12 @@ func TestDockerKeyringFromGoogleDockerConfigMetadataUrl(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintln(w, sampleDockerConfig)
-		} else if strings.HasSuffix(dockerConfigUrlKey, r.URL.Path) {
+		} else if strings.HasSuffix(dockerConfigURLKey, r.URL.Path) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/text")
 			fmt.Fprint(w, "http://foo.bar.com"+valueEndpoint)
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			http.Error(w, "", http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
@@ -139,7 +161,7 @@ func TestDockerKeyringFromGoogleDockerConfigMetadataUrl(t *testing.T) {
 	})
 
 	keyring := &credentialprovider.BasicDockerKeyring{}
-	provider := &dockerConfigUrlKeyProvider{
+	provider := &dockerConfigURLKeyProvider{
 		metadataProvider{Client: &http.Client{Transport: transport}},
 	}
 
@@ -147,11 +169,11 @@ func TestDockerKeyringFromGoogleDockerConfigMetadataUrl(t *testing.T) {
 		t.Errorf("Provider is unexpectedly disabled")
 	}
 
-	keyring.Add(provider.Provide())
+	keyring.Add(provider.Provide(""))
 
-	creds, ok := keyring.Lookup(registryUrl)
+	creds, ok := keyring.Lookup(registryURL)
 	if !ok {
-		t.Errorf("Didn't find expected URL: %s", registryUrl)
+		t.Errorf("Didn't find expected URL: %s", registryURL)
 		return
 	}
 	if len(creds) > 1 {
@@ -171,16 +193,24 @@ func TestDockerKeyringFromGoogleDockerConfigMetadataUrl(t *testing.T) {
 }
 
 func TestContainerRegistryBasics(t *testing.T) {
-	registryUrl := "container.cloud.google.com"
+	registryURL := "container.cloud.google.com"
 	email := "1234@project.gserviceaccount.com"
 	token := &tokenBlob{AccessToken: "ya26.lots-of-indiscernible-garbage"}
 
 	const (
-		defaultEndpoint = "/computeMetadata/v1/instance/service-accounts/default/"
-		scopeEndpoint   = defaultEndpoint + "scopes"
-		emailEndpoint   = defaultEndpoint + "email"
-		tokenEndpoint   = defaultEndpoint + "token"
+		serviceAccountsEndpoint = "/computeMetadata/v1/instance/service-accounts/"
+		defaultEndpoint         = "/computeMetadata/v1/instance/service-accounts/default/"
+		scopeEndpoint           = defaultEndpoint + "scopes"
+		emailEndpoint           = defaultEndpoint + "email"
+		tokenEndpoint           = defaultEndpoint + "token"
 	)
+	var err error
+	gceProductNameFile, err = createProductNameFile()
+	if err != nil {
+		t.Errorf("failed to create gce product name file: %v", err)
+	}
+	defer os.Remove(gceProductNameFile)
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve the URL key and the value endpoint
 		if scopeEndpoint == r.URL.Path {
@@ -198,8 +228,11 @@ func TestContainerRegistryBasics(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			fmt.Fprintln(w, string(bytes))
+		} else if serviceAccountsEndpoint == r.URL.Path {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "default/\ncustom")
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			http.Error(w, "", http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
@@ -220,11 +253,11 @@ func TestContainerRegistryBasics(t *testing.T) {
 		t.Errorf("Provider is unexpectedly disabled")
 	}
 
-	keyring.Add(provider.Provide())
+	keyring.Add(provider.Provide(""))
 
-	creds, ok := keyring.Lookup(registryUrl)
+	creds, ok := keyring.Lookup(registryURL)
 	if !ok {
-		t.Errorf("Didn't find expected URL: %s", registryUrl)
+		t.Errorf("Didn't find expected URL: %s", registryURL)
 		return
 	}
 	if len(creds) > 1 {
@@ -243,10 +276,54 @@ func TestContainerRegistryBasics(t *testing.T) {
 	}
 }
 
+func TestContainerRegistryNoServiceAccount(t *testing.T) {
+	const (
+		serviceAccountsEndpoint = "/computeMetadata/v1/instance/service-accounts/"
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only serve the URL key and the value endpoint
+		if serviceAccountsEndpoint == r.URL.Path {
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/json")
+			bytes, err := json.Marshal([]string{})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			fmt.Fprintln(w, string(bytes))
+		} else {
+			http.Error(w, "", http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	var err error
+	gceProductNameFile, err = createProductNameFile()
+	if err != nil {
+		t.Errorf("failed to create gce product name file: %v", err)
+	}
+	defer os.Remove(gceProductNameFile)
+
+	// Make a transport that reroutes all traffic to the example server
+	transport := utilnet.SetTransportDefaults(&http.Transport{
+		Proxy: func(req *http.Request) (*url.URL, error) {
+			return url.Parse(server.URL + req.URL.Path)
+		},
+	})
+
+	provider := &containerRegistryProvider{
+		metadataProvider{Client: &http.Client{Transport: transport}},
+	}
+
+	if provider.Enabled() {
+		t.Errorf("Provider is unexpectedly enabled")
+	}
+}
+
 func TestContainerRegistryNoStorageScope(t *testing.T) {
 	const (
-		defaultEndpoint = "/computeMetadata/v1/instance/service-accounts/default/"
-		scopeEndpoint   = defaultEndpoint + "scopes"
+		serviceAccountsEndpoint = "/computeMetadata/v1/instance/service-accounts/"
+		defaultEndpoint         = "/computeMetadata/v1/instance/service-accounts/default/"
+		scopeEndpoint           = defaultEndpoint + "scopes"
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve the URL key and the value endpoint
@@ -254,11 +331,21 @@ func TestContainerRegistryNoStorageScope(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `["https://www.googleapis.com/auth/compute.read_write"]`)
+		} else if serviceAccountsEndpoint == r.URL.Path {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintln(w, "default/\ncustom")
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			http.Error(w, "", http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
+
+	var err error
+	gceProductNameFile, err = createProductNameFile()
+	if err != nil {
+		t.Errorf("failed to create gce product name file: %v", err)
+	}
+	defer os.Remove(gceProductNameFile)
 
 	// Make a transport that reroutes all traffic to the example server
 	transport := utilnet.SetTransportDefaults(&http.Transport{
@@ -278,8 +365,9 @@ func TestContainerRegistryNoStorageScope(t *testing.T) {
 
 func TestComputePlatformScopeSubstitutesStorageScope(t *testing.T) {
 	const (
-		defaultEndpoint = "/computeMetadata/v1/instance/service-accounts/default/"
-		scopeEndpoint   = defaultEndpoint + "scopes"
+		serviceAccountsEndpoint = "/computeMetadata/v1/instance/service-accounts/"
+		defaultEndpoint         = "/computeMetadata/v1/instance/service-accounts/default/"
+		scopeEndpoint           = defaultEndpoint + "scopes"
 	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve the URL key and the value endpoint
@@ -287,11 +375,22 @@ func TestComputePlatformScopeSubstitutesStorageScope(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `["https://www.googleapis.com/auth/compute.read_write","https://www.googleapis.com/auth/cloud-platform.read-only"]`)
+		} else if serviceAccountsEndpoint == r.URL.Path {
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, "default/\ncustom")
 		} else {
-			w.WriteHeader(http.StatusNotFound)
+			http.Error(w, "", http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
+
+	var err error
+	gceProductNameFile, err = createProductNameFile()
+	if err != nil {
+		t.Errorf("failed to create gce product name file: %v", err)
+	}
+	defer os.Remove(gceProductNameFile)
 
 	// Make a transport that reroutes all traffic to the example server
 	transport := utilnet.SetTransportDefaults(&http.Transport{
@@ -311,7 +410,7 @@ func TestComputePlatformScopeSubstitutesStorageScope(t *testing.T) {
 
 func TestAllProvidersNoMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
+		http.Error(w, "", http.StatusNotFound)
 	}))
 	defer server.Close()
 
@@ -326,7 +425,7 @@ func TestAllProvidersNoMetadata(t *testing.T) {
 		&dockerConfigKeyProvider{
 			metadataProvider{Client: &http.Client{Transport: transport}},
 		},
-		&dockerConfigUrlKeyProvider{
+		&dockerConfigURLKeyProvider{
 			metadataProvider{Client: &http.Client{Transport: transport}},
 		},
 		&containerRegistryProvider{

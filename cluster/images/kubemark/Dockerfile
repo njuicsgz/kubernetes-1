@@ -1,4 +1,4 @@
-# Copyright 2016 The Kubernetes Authors All rights reserved.
+# Copyright 2016 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,9 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM debian:jessie
-
-COPY kubemark.sh /kubemark.sh
-RUN chmod a+x /kubemark.sh
+# The line below points to debian:jessie as of 2019-10-23. The SHA should be
+# kept in sycn with debian_jessie definition in the WORKSPACE file.
+FROM debian@sha256:e25703ee6ab5b2fac31510323d959cdae31eebdf48e88891c549e55b25ad7e94
 
 COPY kubemark /kubemark

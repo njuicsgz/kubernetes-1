@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# Copyright 2016 The Kubernetes Authors All rights reserved.
+# Copyright 2016 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,15 +26,31 @@ set -x
 
 : "${1:?Usage test/e2e_node/jenkins/e2e-node-jenkins.sh <path to properties>}"
 
-. $1
+. "${1}"
 
-if [ "$INSTALL_GODEP" = true ] ; then
-  go get -u github.com/tools/godep
-  go get -u github.com/onsi/ginkgo/ginkgo
-  go get -u github.com/onsi/gomega
-fi
+# Until all GOPATH references are removed from all build scripts as well,
+# explicitly disable module mode to avoid picking up user-set GO111MODULE preferences.
+# As individual scripts make use of go modules, they can explicitly set GO111MODULE=on
+export GO111MODULE=off
 
-godep go build test/e2e_node/environment/conformance.go
-godep go run test/e2e_node/runner/run_e2e.go  --logtostderr --vmodule=*=2 --ssh-env="gce" \
-  --zone="$GCE_ZONE" --project="$GCE_PROJECT"  \
-  --hosts="$GCE_HOSTS" --images="$GCE_IMAGES" --cleanup="$CLEANUP"
+# indirectly generates test/e2e/generated/bindata.go too
+make generated_files
+
+# TODO converge build steps with hack/build-go some day if possible.
+go build test/e2e_node/environment/conformance.go
+
+PARALLELISM=${PARALLELISM:-8}
+WORKSPACE=${WORKSPACE:-"/tmp/"}
+ARTIFACTS=${WORKSPACE}/_artifacts
+TIMEOUT=${TIMEOUT:-"45m"}
+
+mkdir -p "${ARTIFACTS}"
+
+go run test/e2e_node/runner/remote/run_remote.go  --logtostderr --vmodule=*=4 \
+  --ssh-env="gce" --ssh-user="$GCE_USER" --zone="$GCE_ZONE" --project="$GCE_PROJECT" \
+  --hosts="$GCE_HOSTS" --images="$GCE_IMAGES" --image-project="$GCE_IMAGE_PROJECT" \
+  --image-config-file="$GCE_IMAGE_CONFIG_PATH" --cleanup="$CLEANUP" \
+  --results-dir="$ARTIFACTS" --ginkgo-flags="--nodes=$PARALLELISM $GINKGO_FLAGS" \
+  --test-timeout="$TIMEOUT" --test_args="$TEST_ARGS --kubelet-flags=\"$KUBELET_ARGS\"" \
+  --instance-metadata="$GCE_INSTANCE_METADATA" --system-spec-name="$SYSTEM_SPEC_NAME" \
+  --extra-envs="$EXTRA_ENVS"

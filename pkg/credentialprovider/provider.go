@@ -1,5 +1,5 @@
 /*
-Copyright 2014 The Kubernetes Authors All rights reserved.
+Copyright 2014 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,28 +22,21 @@ import (
 	"sync"
 	"time"
 
-	dockertypes "github.com/docker/engine-api/types"
-	"github.com/golang/glog"
+	"k8s.io/klog"
 )
 
 // DockerConfigProvider is the interface that registered extensions implement
 // to materialize 'dockercfg' credentials.
 type DockerConfigProvider interface {
+	// Enabled returns true if the config provider is enabled.
+	// Implementations can be blocking - e.g. metadata server unavailable.
 	Enabled() bool
-	Provide() DockerConfig
-	// LazyProvide() gets called after URL matches have been performed, so the
-	// location used as the key in DockerConfig would be redundant.
-	LazyProvide() *DockerConfigEntry
-}
-
-func LazyProvide(creds LazyAuthConfiguration) dockertypes.AuthConfig {
-	if creds.Provider != nil {
-		entry := *creds.Provider.LazyProvide()
-		return DockerConfigEntryToLazyAuthConfiguration(entry).AuthConfig
-	} else {
-		return creds.AuthConfig
-	}
-
+	// Provide returns docker configuration.
+	// Implementations can be blocking - e.g. metadata server unavailable.
+	// The image is passed in as context in the event that the
+	// implementation depends on information in the image name to return
+	// credentials; implementations are safe to ignore the image.
+	Provide(image string) DockerConfig
 }
 
 // A DockerConfigProvider that simply reads the .dockercfg file
@@ -77,19 +70,14 @@ func (d *defaultDockerConfigProvider) Enabled() bool {
 }
 
 // Provide implements dockerConfigProvider
-func (d *defaultDockerConfigProvider) Provide() DockerConfig {
+func (d *defaultDockerConfigProvider) Provide(image string) DockerConfig {
 	// Read the standard Docker credentials from .dockercfg
 	if cfg, err := ReadDockerConfigFile(); err == nil {
 		return cfg
 	} else if !os.IsNotExist(err) {
-		glog.V(4).Infof("Unable to parse Docker config file: %v", err)
+		klog.V(4).Infof("Unable to parse Docker config file: %v", err)
 	}
 	return DockerConfig{}
-}
-
-// LazyProvide implements dockerConfigProvider. Should never be called.
-func (d *defaultDockerConfigProvider) LazyProvide() *DockerConfigEntry {
-	return nil
 }
 
 // Enabled implements dockerConfigProvider
@@ -97,13 +85,8 @@ func (d *CachingDockerConfigProvider) Enabled() bool {
 	return d.Provider.Enabled()
 }
 
-// LazyProvide implements dockerConfigProvider. Should never be called.
-func (d *CachingDockerConfigProvider) LazyProvide() *DockerConfigEntry {
-	return nil
-}
-
 // Provide implements dockerConfigProvider
-func (d *CachingDockerConfigProvider) Provide() DockerConfig {
+func (d *CachingDockerConfigProvider) Provide(image string) DockerConfig {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -112,8 +95,8 @@ func (d *CachingDockerConfigProvider) Provide() DockerConfig {
 		return d.cacheDockerConfig
 	}
 
-	glog.V(2).Infof("Refreshing cache for provider: %v", reflect.TypeOf(d.Provider).String())
-	d.cacheDockerConfig = d.Provider.Provide()
+	klog.V(2).Infof("Refreshing cache for provider: %v", reflect.TypeOf(d.Provider).String())
+	d.cacheDockerConfig = d.Provider.Provide(image)
 	d.expiration = time.Now().Add(d.Lifetime)
 	return d.cacheDockerConfig
 }

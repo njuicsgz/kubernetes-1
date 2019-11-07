@@ -1,7 +1,7 @@
-// +build cgo,linux
+// +build linux
 
 /*
-Copyright 2015 The Kubernetes Authors All rights reserved.
+Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ limitations under the License.
 package oom
 
 import (
-	"os"
+	"github.com/opencontainers/runc/libcontainer/cgroups"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -100,5 +100,5 @@ func TestOOMScoreAdjContainer(t *testing.T) {
 
 func TestPidListerFailure(t *testing.T) {
 	_, err := getPids("/does/not/exist")
-	assert.True(t, os.IsNotExist(err), "expected getPids to return not exists error. Got %v", err)
+	assert.True(t, cgroups.IsNotFound(err), "expected getPids to return not exists error. Got %v", err)
 }

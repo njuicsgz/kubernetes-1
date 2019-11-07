@@ -1,5 +1,5 @@
 /*
-Copyright 2016 The Kubernetes Authors All rights reserved.
+Copyright 2016 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,9 +22,9 @@ import (
 	"path/filepath"
 )
 
-//IoUtil is a util for common IO operations
-//it also backports certain operations from golang 1.5
+// IoUtil is a mockable util for common IO operations
 type IoUtil interface {
+	ReadFile(filename string) ([]byte, error)
 	ReadDir(dirname string) ([]os.FileInfo, error)
 	Lstat(name string) (os.FileInfo, error)
 	EvalSymlinks(path string) (string, error)
@@ -37,6 +37,9 @@ func NewIOHandler() IoUtil {
 	return &osIOHandler{}
 }
 
+func (handler *osIOHandler) ReadFile(filename string) ([]byte, error) {
+	return ioutil.ReadFile(filename)
+}
 func (handler *osIOHandler) ReadDir(dirname string) ([]os.FileInfo, error) {
 	return ioutil.ReadDir(dirname)
 }

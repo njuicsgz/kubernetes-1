@@ -1,5 +1,5 @@
 /*
-Copyright 2015 The Kubernetes Authors All rights reserved.
+Copyright 2015 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -24,12 +24,14 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/cadvisor"
 )
 
+// Mock cadvisor.Interface implementation.
 type Mock struct {
 	mock.Mock
 }
 
 var _ cadvisor.Interface = new(Mock)
 
+// Start is a mock implementation of Interface.Start.
 func (c *Mock) Start() error {
 	args := c.Called()
 	return args.Error(0)
@@ -47,6 +49,7 @@ func (c *Mock) ContainerInfoV2(name string, options cadvisorapiv2.RequestOptions
 	return args.Get(0).(map[string]cadvisorapiv2.ContainerInfo), args.Error(1)
 }
 
+// SubcontainerInfo is a mock implementation of Interface.SubcontainerInfo.
 func (c *Mock) SubcontainerInfo(name string, req *cadvisorapi.ContainerInfoRequest) (map[string]*cadvisorapi.ContainerInfo, error) {
 	args := c.Called(name, req)
 	return args.Get(0).(map[string]*cadvisorapi.ContainerInfo), args.Error(1)
@@ -64,22 +67,32 @@ func (c *Mock) MachineInfo() (*cadvisorapi.MachineInfo, error) {
 	return args.Get(0).(*cadvisorapi.MachineInfo), args.Error(1)
 }
 
+// VersionInfo is a mock implementation of Interface.VersionInfo.
 func (c *Mock) VersionInfo() (*cadvisorapi.VersionInfo, error) {
 	args := c.Called()
 	return args.Get(0).(*cadvisorapi.VersionInfo), args.Error(1)
 }
 
-func (c *Mock) DockerImagesFsInfo() (cadvisorapiv2.FsInfo, error) {
+// ImagesFsInfo is a mock implementation of Interface.ImagesFsInfo.
+func (c *Mock) ImagesFsInfo() (cadvisorapiv2.FsInfo, error) {
 	args := c.Called()
 	return args.Get(0).(cadvisorapiv2.FsInfo), args.Error(1)
 }
 
+// RootFsInfo is a mock implementation of Interface.RootFsInfo.
 func (c *Mock) RootFsInfo() (cadvisorapiv2.FsInfo, error) {
 	args := c.Called()
 	return args.Get(0).(cadvisorapiv2.FsInfo), args.Error(1)
 }
 
+// WatchEvents is a mock implementation of Interface.WatchEvents.
 func (c *Mock) WatchEvents(request *events.Request) (*events.EventChannel, error) {
 	args := c.Called()
 	return args.Get(0).(*events.EventChannel), args.Error(1)
+}
+
+// GetDirFsInfo is a mock implementation of Interface.GetDirFsInfo.
+func (c *Mock) GetDirFsInfo(path string) (cadvisorapiv2.FsInfo, error) {
+	args := c.Called(path)
+	return args.Get(0).(cadvisorapiv2.FsInfo), args.Error(1)
 }
